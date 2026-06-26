@@ -473,12 +473,12 @@ async def test_omni_config(
 
 
 async def _fetch_models(base_url: str, api_key: str) -> dict:
-    """拉取 provider 模型列表(GET /models)。成功返回 {ok, models:[id...]}。"""
+    """拉取 provider 模型列表(GET /v1/models)。成功返回 {ok, models:[id...]}。"""
     base_url = base_url.rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(
-                f"{base_url}/models", headers={"Authorization": f"Bearer {api_key}"}
+                f"{base_url}/v1/models", headers={"Authorization": f"Bearer {api_key}"}
             )
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "code": "unreachable", "models": [], "message": f"无法连接 Base URL（{type(e).__name__}）"}

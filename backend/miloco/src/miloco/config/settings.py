@@ -224,6 +224,23 @@ class CameraSettings(BaseModel):
     max_cache_images: int = Field(default=6, description="最大缓存图像数量")
 
 
+class HASettings(BaseModel):
+    """Home Assistant 集成配置。"""
+
+    enabled: bool = Field(default=False, description="是否启用 HA 集成")
+    base_url: str = Field(
+        default="http://192.168.5.184:8123",
+        description="HA 服务器地址（局域网 IP，不用 localhost）",
+    )
+    token_file: str = Field(
+        default="~/.hermes/ha_token",
+        description="HA Long-Lived Access Token 文件路径",
+    )
+    sync_interval_seconds: int = Field(
+        default=30, description="HA 状态同步间隔（秒）"
+    )
+
+
 class RuleSettings(BaseModel):
     """规则引擎相关配置。"""
 
@@ -530,6 +547,10 @@ class MilocoSettings(BaseSettings):
     rule: RuleSettings = Field(
         default_factory=RuleSettings,
         description="规则引擎相关配置",
+    )
+    ha: HASettings = Field(
+        default_factory=HASettings,
+        description="Home Assistant 集成配置",
     )
     perception: PerceptionSettings = Field(
         default_factory=PerceptionSettings,
