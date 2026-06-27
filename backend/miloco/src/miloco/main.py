@@ -257,7 +257,17 @@ async def _backfill_tier_a_reid_embeddings() -> None:
     """
     try:
         from miloco.perception.engine.identity.engine import build_identity_library
-        extractor = get_manager().perception_service.get_reid_extractor()
+        # 按需启用 deep_sort 模式(identity.dynamic_deep_sort)下,启动时常为 real、无活动
+        # ReID。此处不为补历史 emb 就常驻加载一份 ReID ONNX(那会让"无人不加载 ReID"的
+        # 初衷落空、内存白涨数百 MB)——只复用已有活动 tracker 的 ReID(allow_fallback_load
+        # =False)。无则跳过 backfill;等真有人触发 deep_sort 升级后,后续运行再补也不迟。
+        # 非 dynamic 模式(deep_sort 常驻)保持原行为,允许兜底加载补齐历史 emb。
+        from miloco.config import get_settings as _gs
+        _identity_cfg = _gs().perception.engine.get("identity", {}) or {}
+        _dynamic = bool(_identity_cfg.get("dynamic_deep_sort", True))
+        extractor = get_manager().perception_service.get_reid_extractor(
+            allow_fallback_load=not _dynamic
+        )
         if extractor is None:
             logger.info("启动 backfill tier_a ReID emb 跳过: 无可用 ReID extractor")
             return

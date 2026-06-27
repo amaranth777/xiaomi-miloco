@@ -79,13 +79,16 @@ class PerceptionService:
         """
         return self._pipeline.get_active_confirmed_track_keys()
 
-    def get_reid_extractor(self):
+    def get_reid_extractor(self, allow_fallback_load: bool = True):
         """从任一活动的 DeepSortTracker 借 HumanReID 实例,给身份库注册时
         ``add_tier_a_samples_batch`` 做 .npy 兜底抽取用。
         所有 device 的 tracker 共用同一份 ReID ONNX 模型,任选一个即可;
         无活动 tracker → None,库就跳过兜底(行为退回旧版,不报错)。
+
+        ``allow_fallback_load=False`` 时只复用已有 tracker 的 ReID,不触发兜底加载
+        (按需启用 deep_sort 模式下的启动 backfill 用,避免无人也常驻 ReID ONNX)。
         """
-        return self._pipeline.get_reid_extractor()
+        return self._pipeline.get_reid_extractor(allow_fallback_load=allow_fallback_load)
 
     # ---- Buffer management ----
 

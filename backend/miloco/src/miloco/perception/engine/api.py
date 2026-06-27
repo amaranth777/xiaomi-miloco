@@ -276,7 +276,7 @@ class PerceptionEngine(BasePerceptionEngine):
         """
         return self._config.input
 
-    def get_reid_extractor(self):
+    def get_reid_extractor(self, allow_fallback_load: bool = True):
         """供身份库写盘兜底用的 HumanReID 实例。
 
         优先复用活动 DeepSortTracker 持有的 ReID 实例(避免重复加载 ONNX);若
@@ -286,10 +286,18 @@ class PerceptionEngine(BasePerceptionEngine):
         进程内只构造一次(ONNX session ~250 ms 加载,后续 extract_feature 3-5 ms)。
 
         多 device 场景下所有 tracker 共用同一份 ReID ONNX(同模型路径),取任一即可。
+
+        ``allow_fallback_load``:按需启用 deep_sort 模式下,启动 backfill 不该为了补
+        历史 emb 就常驻加载一份 ReID ONNX(违背"无人不加载"初衷)。传 False 时只复用
+        已有活动 tracker 的 ReID,无 tracker 直接返 None(backfill 自然跳过),绝不触发
+        兜底加载。注册流程等用户主动操作仍用默认 True,保持原"摄像头掉线也能算 emb"行为。
         """
         for tracker in self._deep_sort_trackers.values():
             if hasattr(tracker, "human_reid"):
                 return tracker.human_reid
+        if not allow_fallback_load:
+            # 按需模式:只复用、不加载。无活动 deep_sort tracker → 返 None。
+            return None
         # Fallback:摄像头掉线 / 感知 pipeline 没启,但注册流程仍要算 emb 写 .npy。
         # 单独 HumanReID 实例,只用于 add_tier_a_samples_batch / extract_from_image
         # 写盘兜底,跟跟踪侧零额外推理硬约束无关(那条约束只针对 TierU 池代码)。

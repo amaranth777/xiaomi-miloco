@@ -195,11 +195,16 @@ class PipelineProcessor:
         except AttributeError:
             return []
 
-    def get_reid_extractor(self):
+    def get_reid_extractor(self, allow_fallback_load: bool = True):
         """从 PerceptionEngine 借 HumanReID 实例,给 IdentityLibrary 写盘兜底用。
-        链路同 tier_u_pool;任一层启动失败 / 无活动 tracker 返 None。"""
+        链路同 tier_u_pool;任一层启动失败 / 无活动 tracker 返 None。
+
+        ``allow_fallback_load=False`` 时只复用已有 tracker 的 ReID,不触发兜底加载
+        (按需启用 deep_sort 模式下启动 backfill 用,避免无人也常驻 ReID ONNX)。"""
         try:
-            return self._perception_engine_proxy.perception_engine.get_reid_extractor()
+            return self._perception_engine_proxy.perception_engine.get_reid_extractor(
+                allow_fallback_load=allow_fallback_load
+            )
         except AttributeError:
             return None
 
