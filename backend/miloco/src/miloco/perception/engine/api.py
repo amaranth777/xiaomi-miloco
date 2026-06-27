@@ -95,32 +95,22 @@ class PerceptionEngine(BasePerceptionEngine):
         )
         # 构造 tracking_service kwargs:公共参数(model_dir / use_gpu / input_size / fps
         # 等)所有非 mock 模式都需要;mode-specific 参数(sort_config / deep_sort_config)
-        # 各模式只接自己那一份。
+        # 各模式只接自己那一份。逻辑抽到 _build_tracking_kwargs(mode), 供按需升降级时
+        # 按运行时实际模式重建 kwargs(real↔deep_sort 接不同的 *_config)。
         #
         # 历史 bug:原来用 ``mode in ("real", "fast", "detect_only")`` 的 if 条件,
         # deep_sort 落到 else 分支拿空 dict —— yaml 里 perception_model_dir /
         # use_gpu / fps + identity_engine.deep_sort 段 9 字段全部 silent drop,
         # DeepSortTrackingService 用默认参数构造,自定义部署直接失效。
-        if self._tracking_mode == "mock":
-            self._tracking_service_kwargs = {}
-        else:
-            common_kwargs = {
-                "model_dir": self._config.identity.perception_model_dir or None,
-                "use_gpu": self._config.identity.perception_use_gpu,
-                "input_width": self._config.identity.perception_input_width,
-                "input_height": self._config.identity.perception_input_height,
-                "fps": self._config.input.fps,   # SortTracker 用 fps 算 max_age_sec → 帧数
-            }
-            if self._tracking_mode == "deep_sort":
-                self._tracking_service_kwargs = {
-                    **common_kwargs,
-                    "deep_sort_config": self._config.identity_engine.deep_sort,
-                }
-            else:  # real / fast / detect_only
-                self._tracking_service_kwargs = {
-                    **common_kwargs,
-                    "sort_config": self._runtime_sort_cfg,
-                }
+        self._tracking_service_kwargs = self._build_tracking_kwargs(self._tracking_mode)
+
+        # ============ per-device 动态追踪模式(按需启用 deep_sort)============
+        # 基础模式 self._tracking_mode 是 yaml 配的默认值(常为 real);各 device 的**当前
+        # 实际模式**记在 _device_modes 里(检测到人升 deep_sort、连续无人降回 real)。
+        # _no_human_windows 记每 device 连续无人窗数, 达 downgrade_windows 触发降级。
+        # 详见 mark_human_presence。
+        self._device_modes: dict[str, str] = {}
+        self._no_human_windows: dict[str, int] = {}
 
         # ============ per-camera 多实例化 ============
         # 设计原因：进程级单实例 SortTracker 时，所有镜头的 frame 喂同一个 tracker，
@@ -335,6 +325,80 @@ class PerceptionEngine(BasePerceptionEngine):
                 return None
         return self._fallback_human_reid
 
+    def _build_tracking_kwargs(self, mode: str) -> dict:
+        """按 tracking 模式返回 create_tracking_service 的 kwargs。
+
+        mock 不接任何参数;其余模式都需要公共部署参数(model_dir / use_gpu /
+        input_size / fps),再按模式各接自己那份 mode-specific config:
+        deep_sort 接 ``deep_sort_config``,real / fast / detect_only 接 ``sort_config``。
+
+        抽成方法是为了按需升降级(real↔deep_sort)时按运行时实际模式重建 kwargs
+        —— 两种模式接的 *_config 字段名不同,不能共用同一份 dict。
+        """
+        if mode == "mock":
+            return {}
+        common_kwargs = {
+            "model_dir": self._config.identity.perception_model_dir or None,
+            "use_gpu": self._config.identity.perception_use_gpu,
+            "input_width": self._config.identity.perception_input_width,
+            "input_height": self._config.identity.perception_input_height,
+            "fps": self._config.input.fps,   # SortTracker 用 fps 算 max_age_sec → 帧数
+        }
+        if mode == "deep_sort":
+            return {
+                **common_kwargs,
+                "deep_sort_config": self._config.identity_engine.deep_sort,
+            }
+        # real / fast / detect_only
+        return {
+            **common_kwargs,
+            "sort_config": self._runtime_sort_cfg,
+        }
+
+    def mark_human_presence(self, device_id: str, has_human: bool) -> None:
+        """按本窗该 device 是否检测到人,驱动 tracking 模式的动态升降级。
+
+        策略(按需启用 deep_sort):平时跑轻量 real(仅检测,~100MB);某 device 一旦
+        检测到人,下个窗起把它升级到 deep_sort(额外加载 ReID,做人员重识别);连续
+        ``deep_sort_downgrade_windows`` 个窗无人,再降回 real 释放 ReID 内存。
+
+        实际生效要求 ``identity.dynamic_deep_sort=True`` 且基础模式非 mock —— mock 无
+        真实 tracker、无升降级语义;dynamic_deep_sort=False 时本方法直接 no-op,完全
+        保持 ``tracking_service_mode`` 的原行为。
+
+        升级/降级都只改 ``_device_modes`` 并删掉 ``_tracking_services`` 缓存,下个窗
+        ``_get_or_create_tracking_service`` 据新模式懒重建。降级时还清掉
+        ``_deep_sort_trackers`` 里该 device 引用,让旧 DeepSortTracker(及其 ReID
+        session)失去最后一个强引用、可被 GC 回收。
+        """
+        if not self._config.identity.dynamic_deep_sort:
+            return
+        if self._tracking_mode == "mock":
+            return
+
+        cur_mode = self._device_modes.get(device_id, self._tracking_mode)
+        if has_human:
+            self._no_human_windows[device_id] = 0
+            if cur_mode != "deep_sort":
+                self._device_modes[device_id] = "deep_sort"
+                self._tracking_services.pop(device_id, None)
+                logger.info(
+                    "device=%s 检测到人，tracking 升级→deep_sort", device_id,
+                )
+        else:
+            cnt = self._no_human_windows.get(device_id, 0) + 1
+            self._no_human_windows[device_id] = cnt
+            downgrade_windows = self._config.identity.deep_sort_downgrade_windows
+            if cur_mode == "deep_sort" and cnt >= downgrade_windows:
+                self._device_modes[device_id] = "real"
+                self._tracking_services.pop(device_id, None)
+                # 清掉 ReID 共享 dict 里该 device 的 DeepSortTracker 引用,释放 ReID。
+                self._deep_sort_trackers.pop(cam_id_from_device_id(device_id), None)
+                self._no_human_windows[device_id] = 0
+                logger.info(
+                    "device=%s 连续%d窗无人，tracking 降级→real", device_id, cnt,
+                )
+
     def _get_or_create_tracking_service(self, device_id: str, room_name: str):
         """懒加载单镜头 SortTracker。每个 device_id 一份，跨调用复用。
 
@@ -357,11 +421,15 @@ class PerceptionEngine(BasePerceptionEngine):
         self._scope_label_for(device_id, room_name)  # 注册 device 到 room 索引（副作用），label 此处不用
         svc = self._tracking_services.get(device_id)
         if svc is None:
+            # 按需启用 deep_sort:用该 device 的**当前实际模式**(_device_modes,由
+            # mark_human_presence 维护)而非固定基础模式;首次见到的 device 退回基础值。
+            mode = self._device_modes.get(device_id, self._tracking_mode)
+            mode_kwargs = self._build_tracking_kwargs(mode)
             try:
-                svc = create_tracking_service(self._tracking_mode, **self._tracking_service_kwargs)
-                logger.info("created tracking_service for device=%s mode=%s", device_id, self._tracking_mode)
+                svc = create_tracking_service(mode, **mode_kwargs)
+                logger.info("created tracking_service for device=%s mode=%s", device_id, mode)
             except Exception as e:  # noqa: BLE001
-                if self._tracking_mode == "deep_sort":
+                if mode == "deep_sort":
                     logger.warning(
                         "tracking_service mode=deep_sort 创建失败:%s。降级 mode=real 重试"
                         "(可能是 human_body_reid_v2.onnx 模型缺失;陌生人池将退化为"
@@ -387,7 +455,10 @@ class PerceptionEngine(BasePerceptionEngine):
             # device_id, 跟前端 ``pool fetch --cam`` 入参命名空间统一(v2 重构)。
             # 降级到 real 时 svc.tracker 是 SortTracker 不是 DeepSortTracker —
             # provider get_embedding 永远拿不到 emb,池自然退化(预期行为)。
-            if self._tracking_mode == "deep_sort" and hasattr(svc, "tracker"):
+            # 注:按需启用 deep_sort 下,基础 _tracking_mode 常为 real,真实模式以
+            # 上面解析出的 ``mode``(_device_modes)为准 — 必须用 mode 判断,否则动态
+            # 升级到 deep_sort 的 device 永远不登记 tracker,ReID 取不到 emb。
+            if mode == "deep_sort" and hasattr(svc, "tracker"):
                 from miloco.perception.engine.identity.deep_sort import DeepSortTracker
                 if isinstance(svc.tracker, DeepSortTracker):
                     self._deep_sort_trackers[cam_id_from_device_id(device_id)] = svc.tracker
@@ -885,6 +956,7 @@ class PerceptionEngine(BasePerceptionEngine):
                 gate_last_audio_pass_ts=self._gate_last_audio_pass_ts,
                 gate_hold_active=self._gate_hold_active,
                 gate_hold_started_at=self._gate_hold_started_at,
+                on_human_presence=self.mark_human_presence,
             )
         except Exception as e:
             logger.error("Batch pipeline failed: %s", e, exc_info=True)

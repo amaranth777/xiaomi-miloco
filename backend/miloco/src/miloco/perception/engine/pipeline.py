@@ -46,6 +46,7 @@ from miloco.perception.engine.types import (
     GateTrigger,
     IdentityPacket,
     InputSlice,
+    ObjectType,
     OmniContext,
     OmniOutput,
     PipelineResult,
@@ -388,6 +389,7 @@ async def run_batch_pipeline(
     gate_last_audio_pass_ts: "dict[str, float] | None" = None,
     gate_hold_active: "dict[str, bool] | None" = None,
     gate_hold_started_at: "dict[str, float] | None" = None,
+    on_human_presence: "Callable[[str, bool], None] | None" = None,
 ) -> BatchPipelineResult:
     """Run perception pipeline for a batch of devices, grouped by room.
 
@@ -572,6 +574,24 @@ async def run_batch_pipeline(
             frame_index_offset=frame_index_offset,
         )
         room_timing[f"identity_{did}_ms"] = _ms_since(t)
+
+        # 按需启用 deep_sort:本窗该 device 是否检测到人 → 回调驱动 tracking 模式
+        # 升降级(检测到人升 deep_sort、连续无人降 real)。回调由 PerceptionEngine 注入
+        # self.mark_human_presence;None 时(测试/旧调用方)跳过,不影响主链路。
+        if on_human_presence is not None:
+            has_human = any(
+                t.type in (
+                    ObjectType.HUMAN,
+                    ObjectType.HUMAN_WITH_FACE,
+                    ObjectType.HUMAN_BODY,
+                    ObjectType.HUMAN_FACE,
+                )
+                for t in identity_packet.targets
+            )
+            try:
+                on_human_presence(did, has_human)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("on_human_presence 回调失败 device=%s: %s", did, e)
 
         # omni 阶段:把 per-device 元数据塞进 ContextVar,供 call_omni 内 publish_omni_log 拿。
         device_ctx_token = set_device_context(DeviceContext(

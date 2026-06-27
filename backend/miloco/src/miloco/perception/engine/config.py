@@ -49,6 +49,12 @@ class IdentityConfig:
     dynamic_frame_resolution: str = "medium"
     tracking_service_mode: str = "mock"  # "mock" | "real" | "deep_sort"（v1.2 加 deep_sort：含 ReID 给陌生人池复用）
     tracking_service_url: str = ""
+    # 按需启用 deep_sort：基础模式跑轻量 real（仅检测，~100MB），检测到人时该 device
+    # 动态升级到 deep_sort（额外加载 human_body_reid_v2.onnx 做 ReID，~767MB），连续
+    # N 窗无人再降级回 real 释放内存。False = 完全保持原行为（始终用 tracking_service_mode）。
+    # 仅当基础模式非 mock 时生效（mock 没有真实 tracker，无升降级语义）。
+    dynamic_deep_sort: bool = True
+    deep_sort_downgrade_windows: int = 6  # 连续 N 窗无人才把该 device 从 deep_sort 降回 real
     # Real tracking service config
     perception_model_dir: str = ""  # empty = auto-detect
     perception_use_gpu: bool = False
