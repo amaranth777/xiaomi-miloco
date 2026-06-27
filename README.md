@@ -2,6 +2,8 @@
 
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
+> **🔧 This is a customized fork.** See [FORK_CHANGES.md](FORK_CHANGES.md) for added features (on-demand deep_sort, gate motion-weight zones, Lumi device graph). Upstream README below is unmodified.
+
 Xiaomi's open-source AI solution for the future of whole-home intelligence. It uses the video and audio from Mi Home cameras as a full-modal perception gateway, the in-house MiMo large model as its intelligent brain, and runs as an Agent plugin on top of [OpenClaw](https://openclaw.ai) to orchestrate whole-home devices for a proactive, intelligent experience.
 
 Miloco 2.0 perceives what happens at home, makes proactive decisions and controls devices based on common sense, breaks down "vague and long-term" goals into trackable household tasks, recognizes family members, and—drawing on home memory—delivers personalized service to each member: querying and controlling devices, tuning the home to each member's comfort, or offering useful reminders at the right moment.
