@@ -4,6 +4,8 @@ import numpy as np
 from miloco.perception.engine.config import GateConfig
 from miloco.perception.engine.gate.visual_gate import (
     _DIFF_SIZE,
+    _build_weight_mask,
+    _diff_processed,
     _preprocess,
     compute_frame_diff,
     evaluate_visual,
@@ -199,3 +201,116 @@ class TestInterAreaDownsampling:
         score = compute_frame_diff(clean, with_block)
         # 100×100 / 1920×1080 ≈ 0.48%；降采样后应仍能反映出来
         assert score > 0.001, f"大块变化未被保留: {score}"
+
+
+class TestBuildWeightMask:
+    """_build_weight_mask: 归一化多边形 → 448×448 float32 权重图。"""
+
+    def test_empty_zones_returns_none(self):
+        assert _build_weight_mask([]) is None
+        assert _build_weight_mask(None) is None
+
+    def test_mask_inside_polygon_is_weight_outside_is_one(self):
+        # 左上 1/4 矩形降权到 0.3
+        zones = [{"polygon": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]], "weight": 0.3}]
+        mask = _build_weight_mask(zones)
+        w, h = _DIFF_SIZE
+        assert mask is not None
+        assert mask.shape == (h, w)
+        assert mask.dtype == np.float32
+        # 多边形内部(明确在边界内的点)= weight
+        assert mask[50, 50] == np.float32(0.3)
+        assert mask[100, 100] == np.float32(0.3)
+        # 多边形外 = 1.0
+        assert mask[400, 400] == np.float32(1.0)
+        assert mask[50, 400] == np.float32(1.0)
+
+    def test_overlapping_zones_take_min_weight(self):
+        # 两个重叠 zone:重叠处应取更激进(更小)的权重
+        zones = [
+            {"polygon": [[0.0, 0.0], [0.6, 0.0], [0.6, 0.6], [0.0, 0.6]], "weight": 0.5},
+            {"polygon": [[0.4, 0.4], [1.0, 0.4], [1.0, 1.0], [0.4, 1.0]], "weight": 0.2},
+        ]
+        mask = _build_weight_mask(zones)
+        # 仅第一个 zone 覆盖处 = 0.5
+        assert mask[50, 50] == np.float32(0.5)
+        # 仅第二个 zone 覆盖处 = 0.2
+        assert mask[400, 400] == np.float32(0.2)
+        # 重叠区 = min(0.5, 0.2) = 0.2
+        assert mask[230, 230] == np.float32(0.2)
+        # 都不覆盖处 = 1.0
+        assert mask[20, 400] == np.float32(1.0)
+
+    def test_mask_is_cached(self):
+        zones = [{"polygon": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]], "weight": 0.4}]
+        m1 = _build_weight_mask(zones)
+        m2 = _build_weight_mask(zones)
+        # 同一份 zones → 缓存命中,返回同一对象
+        assert m1 is m2
+
+
+class TestDiffProcessedWeightMask:
+    """_diff_processed 的 weight_mask 行为。"""
+
+    def test_no_mask_equals_legacy_count_nonzero(self):
+        """无 mask 时新算法与原 count_nonzero/size 逐位相等。"""
+        rng = np.random.default_rng(7)
+        a = rng.integers(0, 256, size=_DIFF_SIZE, dtype=np.uint8)
+        b = rng.integers(0, 256, size=_DIFF_SIZE, dtype=np.uint8)
+        import cv2
+
+        diff = cv2.absdiff(a, b)
+        legacy = np.count_nonzero(diff > 25) / diff.size
+        assert _diff_processed(a, b) == legacy
+
+    def test_mask_scales_down_changes_in_zone(self):
+        """构造已知 diff:全图变化,左半边降权 0.5 → 总占比应被精确缩减。"""
+        w, h = _DIFF_SIZE
+        a = np.zeros((h, w), dtype=np.uint8)
+        b = np.full((h, w), 255, dtype=np.uint8)  # 全图都变化
+        # 左半边 weight=0.5,右半边 1.0
+        mask = np.ones((h, w), dtype=np.float32)
+        mask[:, : w // 2] = 0.5
+        score = _diff_processed(a, b, weight_mask=mask)
+        # 左半(占比 0.5)按 0.5 计 + 右半(占比 0.5)按 1.0 计 = 0.25 + 0.5 = 0.75
+        assert abs(score - 0.75) < 1e-6
+
+    def test_full_zone_weight_zero_kills_score(self):
+        """整图降权到 0 → 即便全变化也判 0(极端验证缩减生效)。"""
+        w, h = _DIFF_SIZE
+        a = np.zeros((h, w), dtype=np.uint8)
+        b = np.full((h, w), 255, dtype=np.uint8)
+        mask = np.zeros((h, w), dtype=np.float32)
+        assert _diff_processed(a, b, weight_mask=mask) == 0.0
+
+
+class TestEvaluateVisualWeightZones:
+    """evaluate_visual 与 motion_weight_zones 的集成。"""
+
+    def test_empty_zones_behaviour_unchanged(self):
+        """zones 为空(默认)时,evaluate_visual 行为与原来一致。"""
+        gray = _solid_frame(100, 100, 100)
+        white = _solid_frame(255, 255, 255)
+        frames = [gray, gray, white, white, white, white]
+        baseline = evaluate_visual(frames, GateConfig())
+        zoned = evaluate_visual(frames, GateConfig(motion_weight_zones=[]))
+        assert baseline.changed == zoned.changed
+        assert baseline.max_score == zoned.max_score
+        assert baseline.intra_max == zoned.intra_max
+        assert baseline.cross_max == zoned.cross_max
+
+    def test_zone_downweights_localized_change(self):
+        """变化集中在降权区 → score 比无降权时更低。"""
+        gray = _solid_frame(100, 100, 100)
+        # 仅左上角(降权区内)变白,其余不变
+        moved = gray.copy()
+        moved[0:30, 0:30] = [255, 255, 255]  # BGR 白块,落在归一化左上
+        frames = [gray, moved]
+        # 左上较大降权区,weight=0.2
+        zones = [{"polygon": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]], "weight": 0.2}]
+        plain = evaluate_visual(frames, GateConfig(), prev_frame=_preprocess(gray))
+        weighted = evaluate_visual(
+            frames, GateConfig(motion_weight_zones=zones), prev_frame=_preprocess(gray)
+        )
+        assert weighted.max_score < plain.max_score
+        assert weighted.max_score > 0.0  # 仍有残余(没盲)

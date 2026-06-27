@@ -37,6 +37,12 @@ class GateConfig:
     # visual 滞回时长(秒)。visual 最近通过过、距今 <= 此值时,本窗 visual
     # 不通过也强制生成 packet 并打 hold 标志。0 = 关闭。
     hold_duration_sec: float = 360.0
+    # 运动降权区：列表，每项是一个归一化多边形 + 降权系数。
+    # 该区域内的像素变化按 weight 缩减后再统计，用于抑制窗外环境噪声(树影/车流)
+    # 又不致盲(大面积变化如人影投玻璃仍能累积过阈)。坐标归一化[0,1]，原点左上。
+    # 空列表 = 不降权(默认，保持原行为)。
+    # 每项格式: {"polygon": [[x,y],...], "weight": 0.3}
+    motion_weight_zones: list[dict] = field(default_factory=list)
 
 
 @dataclass
