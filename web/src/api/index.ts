@@ -328,6 +328,10 @@ export async function clearUsageData(): Promise<void> {
   return impl.realClearUsageData();
 }
 
+export async function getBabelQuota() {
+  return impl.getBabelQuota();
+}
+
 // ── omni 模型配置（「模型」页内读/写，多档案切换）────────────────
 export async function getOmniConfig(): Promise<OmniConfigState> {
   return impl.realGetOmniConfig();

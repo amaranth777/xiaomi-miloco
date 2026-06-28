@@ -92,6 +92,15 @@
     "deleteSuccess": "已删除",
     "deleteFailed": "删除失败",
     "modelsEmptyResult": "该地址未返回模型列表",
-    "modelsFetchFailed": "拉取模型失败"
+    "modelsFetchFailed": "拉取模型失败",
+    "geminiQuotaTitle": "Gemini 配额状态",
+    "geminiQuotaUnavailable": "babel-bridge 不可达",
+    "geminiQuotaUpdated": "更新于 {{time}}",
+    "geminiQuotaAvailable": "可用",
+    "geminiQuotaExhausted": "已耗尽",
+    "geminiQuotaResetsAt": "重置于 {{time}}",
+    "geminiQuotaSuccess": "成功 {{n}} 次",
+    "geminiQuota429": "{{n}} 次限流",
+    "geminiQuotaNoData": "暂无数据"
   }
 }

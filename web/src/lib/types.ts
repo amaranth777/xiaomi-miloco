@@ -586,3 +586,21 @@ export interface Task {
   createdAt: string;
   record: TaskRecordSummary | null;
 }
+
+// ── Babel-bridge Gemini quota ──────────────────────────────────────────────
+export interface BabelModelQuota {
+  available: boolean;
+  total_success: number;
+  total_429s: number;
+  consecutive_429s: number;
+  exhausted_at?: string;   // ISO datetime
+  resets_at?: string;      // ISO datetime
+  last_success_at?: string;
+}
+
+export interface BabelQuota {
+  updated_at: string;
+  reset_cycle_hours: number;
+  state_file: string;
+  models: Record<string, BabelModelQuota>;
+}

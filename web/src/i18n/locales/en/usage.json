@@ -92,6 +92,15 @@
     "deleteSuccess": "Deleted",
     "deleteFailed": "Couldn't delete",
     "modelsEmptyResult": "This address returned no model list",
-    "modelsFetchFailed": "Couldn't fetch models"
+    "modelsFetchFailed": "Couldn't fetch models",
+    "geminiQuotaTitle": "Gemini Quota",
+    "geminiQuotaUnavailable": "babel-bridge unreachable",
+    "geminiQuotaUpdated": "Updated {{time}}",
+    "geminiQuotaAvailable": "Available",
+    "geminiQuotaExhausted": "Exhausted",
+    "geminiQuotaResetsAt": "Resets {{time}}",
+    "geminiQuotaSuccess": "{{n}} success",
+    "geminiQuota429": "{{n}} rate-limited",
+    "geminiQuotaNoData": "No data"
   }
 }

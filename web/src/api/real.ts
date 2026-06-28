@@ -10,6 +10,7 @@ import { authHeaders } from "./register";
 import i18n from "@/i18n";
 import type {
   ActivityEvent,
+  BabelQuota,
   Device,
   DeviceCategory,
   DeviceProperty,
@@ -1509,4 +1510,13 @@ export async function realDeleteTask(taskId: string): Promise<void> {
     `/api/tasks/${encodeURIComponent(taskId)}?reason=abandoned`,
     { method: "DELETE" },
   );
+}
+
+// ── Babel-bridge Gemini quota ─────────────────────────────────────────────
+export async function getBabelQuota(): Promise<BabelQuota | null> {
+  const r = await apiFetch<{ code: number; message: string; data: BabelQuota | null }>(
+    "/api/admin/babel-quota",
+  );
+  if (r.code !== 0 || !r.data) return null;
+  return r.data;
 }
