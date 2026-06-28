@@ -39,6 +39,8 @@
     "colAudio": "Audio",
     "noUsageData": "No usage data",
     "breakdownNote": "Cache / video / audio are all subsets of \"input\" and are not counted separately in the total; cache hit rate = cache / input.",
+    "geminiNoMediaBreakdown": "Gemini does not provide video/audio token breakdown",
+    "breakdownNoteGemini": "Gemini models only report total input tokens; video/audio breakdown is shown as \"—\".",
     "configTitle": "Model config",
     "configLoadError": "Couldn't load model config",
     "currentPrefix": "Current: ",

@@ -39,6 +39,8 @@
     "colAudio": "音频",
     "noUsageData": "暂无用量数据",
     "breakdownNote": "缓存 / 视频 / 音频均为「输入」的子集，不另计入总量;缓存命中率 = 缓存 / 输入。",
+    "geminiNoMediaBreakdown": "Gemini 不提供视频/音频 token 细分",
+    "breakdownNoteGemini": "Gemini 模型仅提供总输入量，视频/音频细分标记为「—」。",
     "configTitle": "模型配置",
     "configLoadError": "模型配置加载失败",
     "currentPrefix": "当前:",

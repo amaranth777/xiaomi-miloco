@@ -13,6 +13,11 @@ interface ModelRow {
   breakdown: TokenBreakdown;
 }
 
+/** Gemini 模型不提供 video/audio 细分，video=0 且 audio=0 时显示 — */
+function isGeminiNoBreakdown(model: string, video: number, audio: number): boolean {
+  return model.toLowerCase().includes("gemini") && video === 0 && audio === 0;
+}
+
 /** 把 model×type 明细行按模型合并(累加调用数与各模态),模型名升序。 */
 function rowsByModel(stats: UsageStats): ModelRow[] {
   const byModel = new Map<string, ModelRow>();
@@ -111,10 +116,22 @@ export function UsageBreakdownTable({ stats, embedded = false }: Props) {
                       : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-right num text-text-tertiary">
-                    {humanTokens(r.breakdown.video)}
+                    {isGeminiNoBreakdown(r.model, r.breakdown.video, r.breakdown.audio) ? (
+                      <span title={t("usage.geminiNoMediaBreakdown")} className="text-text-tertiary cursor-help">
+                        —
+                      </span>
+                    ) : (
+                      humanTokens(r.breakdown.video)
+                    )}
                   </td>
                   <td className="px-5 md:px-6 py-2.5 text-right num text-text-tertiary">
-                    {humanTokens(r.breakdown.audio)}
+                    {isGeminiNoBreakdown(r.model, r.breakdown.video, r.breakdown.audio) ? (
+                      <span title={t("usage.geminiNoMediaBreakdown")} className="text-text-tertiary cursor-help">
+                        —
+                      </span>
+                    ) : (
+                      humanTokens(r.breakdown.audio)
+                    )}
                   </td>
                 </tr>
               ))
@@ -125,6 +142,9 @@ export function UsageBreakdownTable({ stats, embedded = false }: Props) {
 
       <p className="text-caption text-text-tertiary mt-3">
         {t("usage.breakdownNote")}
+        {rows.some(r => r.model.toLowerCase().includes("gemini")) && (
+          <span className="block mt-1">{t("usage.breakdownNoteGemini")}</span>
+        )}
       </p>
     </section>
   );
