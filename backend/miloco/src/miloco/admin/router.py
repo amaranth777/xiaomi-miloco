@@ -156,6 +156,25 @@ def clear_token_usage(current_user: str = Depends(verify_token)):
     return NormalResponse(code=0, message="ok", data={"deleted": deleted})
 
 
+@router.get(
+    "/babel-quota",
+    summary="Gemini quota state from babel-bridge",
+    response_model=NormalResponse,
+)
+async def get_babel_quota(current_user: str = Depends(verify_token)):
+    """Proxy /quota from babel-bridge (localhost:8788). Returns model availability and 429 stats."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://127.0.0.1:8788/quota")
+            resp.raise_for_status()
+            return NormalResponse(code=0, message="ok", data=resp.json())
+    except httpx.ConnectError:
+        return NormalResponse(code=0, message="babel-bridge not reachable", data=None)
+    except Exception as e:
+        logger.warning(f"babel-quota proxy error: {e}")
+        return NormalResponse(code=0, message=str(e), data=None)
+
+
 # ─── debug 开关(同步 runtime override + .debug_observability 文件 flag) ────────
 
 
