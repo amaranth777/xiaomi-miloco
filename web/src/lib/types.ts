@@ -119,6 +119,12 @@ export interface ActivityEvent {
    *   "m4a" = audio-only 路径(纯 AAC,UI 显 🎤 音频)
    *   undefined / null = 未落盘(老 event / metadata-only / 已被 cleanup 清掉) */
   clip_kind?: "mp4" | "m4a" | null;
+  /** omni_trace.json.gz 是否存在;前端据此决定是否显示反馈按钮 */
+  has_trace?: boolean;
+  /** 该事件是否已有反馈打包 */
+  has_feedback?: boolean;
+  feedback_pack_path?: string | null;
+  feedback_pack_size?: number | null;
 }
 
 // ── 家庭档案（home_profile：候选区 / 正式区记忆）─────────────────
@@ -322,7 +328,7 @@ export interface OmniConfigUpdate {
 /** 测试连接结果：ok=true 即连通；否则 message 给出原因（Key 无效 / 不可达 / 模型不存在等）。 */
 export interface OmniTestResult {
   ok: boolean;
-  /** 机器码,前端按它本地化(ok/ok_model_found/bad_key/not_found/rejected_authed/unreachable/no_key/http_error);缺省回退 message。 */
+  /** 机器码,前端按它本地化(ok/bad_key/not_found/rejected_authed/unreachable/no_key/http_error);缺省回退 message。 */
   code?: string;
   status?: number;
   latency_ms?: number;
