@@ -62,6 +62,7 @@ from miloco.perception.types import (
     VideoFrame,
     VideoStream,
 )
+from miloco.utils.time_utils import deploy_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +119,15 @@ def _reraise_first(results: list[Any]) -> None:
 
 
 def _fmt_time_window(start_ms: float, end_ms: float) -> str:
-    """画面时间窗 ``[HH:MM:SS-HH:MM:SS]``（= 该相机本窗 snapshot 起止时刻，本地时区）。"""
-    s = datetime.fromtimestamp(start_ms / 1000).strftime("%H:%M:%S")
-    e = datetime.fromtimestamp(end_ms / 1000).strftime("%H:%M:%S")
+    """画面时间窗 ``[HH:MM:SS-HH:MM:SS]``（= 该相机本窗 snapshot 起止时刻，部署时区）。
+
+    走 ``deploy_timezone()`` 而非进程/OS 时钟：此时间窗经 ``event_text_builder``
+    的「时间」字段直达 agent，若用裸 ``fromtimestamp`` 则在 host TZ≠部署时区时错标
+    时刻（如 UTC 主机把 10:52 显示成 02:52），故与 API 出口 ISO 同源统一到部署时区。
+    """
+    tz = deploy_timezone()
+    s = datetime.fromtimestamp(start_ms / 1000, tz=tz).strftime("%H:%M:%S")
+    e = datetime.fromtimestamp(end_ms / 1000, tz=tz).strftime("%H:%M:%S")
     return f"[{s}-{e}]"
 
 
@@ -291,7 +298,7 @@ async def run_pipeline(
     # Gate（本入口为无状态单次调用，无跨窗口基准可传，丢弃 last_checked / 两 ts）。
     # 注意:prev_frame 恒为 None → 视觉 gate 每次都走 cold-start 放行,本入口不会因静止画面 skipped。
     # 若将来把它放进循环复用,需自行在外维护 prev_frame 才能恢复静止 skip 语义。
-    gate_packet, gate_timing, _, _, _ = run_gate(input_slice, config.gate, config.input.fps)
+    gate_packet, gate_timing, _, _, _ = await run_gate(input_slice, config.gate, config.input.fps)
     timing["gate_ms"] = gate_timing.total_ms
     timing["gate_video_ms"] = gate_timing.video_ms
     timing["gate_audio_ms"] = gate_timing.audio_ms
@@ -476,7 +483,7 @@ async def run_batch_pipeline(
             gate_last_audio_pass_ts.get(did)
             if gate_last_audio_pass_ts is not None else None
         )
-        gate_packet, gate_timing, last_checked, new_last_v, new_last_a = run_gate(
+        gate_packet, gate_timing, last_checked, new_last_v, new_last_a = await run_gate(
             snapshot, config.gate, config.input.fps,
             prev_frame=prev_frame,
             last_visual_pass_ts=last_v,
