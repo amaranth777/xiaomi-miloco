@@ -61,7 +61,19 @@ def validate_resources(
         )
 
     models_path = Path(models_dir)
-    if not models_path.is_dir():
+    if models_path.is_symlink():
+        if not models_path.is_dir():
+            return ValidationResult(
+                status=EngineReadiness.MODELS_MISSING,
+                message="模型目录符号链接无效",
+            )
+    elif models_path.exists():
+        if not models_path.is_dir():
+            return ValidationResult(
+                status=EngineReadiness.MODELS_MISSING,
+                message="模型目录路径不是目录",
+            )
+    else:
         try:
             models_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:

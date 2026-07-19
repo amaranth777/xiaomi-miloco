@@ -39,6 +39,32 @@ class TestValidateResources:
         assert result.status == EngineReadiness.MODELS_MISSING
         assert new_dir.is_dir()
 
+    def test_valid_models_dir_symlink(self, tmp_path):
+        target = tmp_path / "real_models"
+        target.mkdir()
+        _create_all_models(target)
+        link = tmp_path / "models_link"
+        link.symlink_to(target, target_is_directory=True)
+
+        result = validate_resources("test-key", str(link))
+        assert result.status == EngineReadiness.READY
+
+    def test_broken_models_dir_symlink_is_not_replaced(self, tmp_path):
+        link = tmp_path / "broken_models_link"
+        link.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+        result = validate_resources("test-key", str(link))
+        assert result.status == EngineReadiness.MODELS_MISSING
+        assert link.is_symlink()
+
+    def test_models_path_file_is_not_replaced(self, tmp_path):
+        path = tmp_path / "models-file"
+        path.write_text("not a directory")
+
+        result = validate_resources("test-key", str(path))
+        assert result.status == EngineReadiness.MODELS_MISSING
+        assert path.is_file()
+
     def test_single_model_missing(self, tmp_path):
         _create_all_models(tmp_path)
         (tmp_path / "det_4C.onnx").unlink()
